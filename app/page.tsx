@@ -17,6 +17,7 @@ type RollResult = {
   tags: RolledTag[];
   digitBonus: { score: number; label: string };
   totalScore: number;
+  isDeleted?: boolean;
 };
 
 type Phase = 'idle' | 'fetching' | 'digits' | 'tags' | 'done';
@@ -33,22 +34,26 @@ function getDigitBonus(id: number) {
   }
 }
 
-function getRollRarity(score: number, tags: RolledTag[]) {
+function getRollRarity(score: number, tags: RolledTag[], isDeleted?: boolean) {
+  if (isDeleted) {
+    return { name: 'DELETED', class: 'text-zinc-400 border-black bg-black shadow-[0_0_20px_rgba(0,0,0,0.8)]' };
+  }
+  
   if (tags.length > 0 && tags.every(t => t.count >= 50000)) {
     return { name: 'TRASH', class: 'text-stone-500 border-stone-600 shadow-[0_0_10px_rgba(120,113,108,0.3)] bg-stone-900/50' };
   }
   
   if (score >= 100000) return { name: 'MYTHIC', class: 'text-red-500 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]' };
   if (score >= 50000) return { name: 'LEGENDARY', class: 'text-yellow-400 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)]' };
-  if (score >= 10000) return { name: 'EPIC', class: 'text-purple-400 border-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.5)]' };
+  if (score >= 20000) return { name: 'EPIC', class: 'text-purple-400 border-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.5)]' };
   if (score >= 5000) return { name: 'RARE', class: 'text-blue-400 border-blue-400' };
   if (score >= 1000) return { name: 'UNCOMMON', class: 'text-green-400 border-green-400' };
   return { name: 'COMMON', class: 'text-gray-400 border-gray-600' };
 }
 
-// Maps the final roll rarity tier to the requested box emoji
 function getRarityEmoji(rarityName: string) {
   switch (rarityName) {
+    case 'DELETED': return '⬛';
     case 'TRASH': return '🟫';
     case 'COMMON': return '⬜';
     case 'UNCOMMON': return '🟩';
@@ -60,7 +65,6 @@ function getRarityEmoji(rarityName: string) {
   }
 }
 
-// Maps an individual tag's count to its corresponding box emoji
 function getTagEmoji(count: number) {
   if (count < 100) return '🟧'; // Legendary
   if (count < 1000) return '🟪'; // Epic
@@ -98,6 +102,7 @@ export default function RNGDle() {
         const res = await fetch('/api/roll');
         const data = await res.json();
 
+        // Handle a successfully retrieved gallery
         if (data.success) {
           success = true;
           
@@ -116,7 +121,6 @@ export default function RNGDle() {
             };
           });
 
-          // Sort tags least rare -> rarest for the visual reveal
           processedTags.sort((a, b) => a.score - b.score);
 
           setResult({
@@ -125,6 +129,21 @@ export default function RNGDle() {
             tags: processedTags,
             digitBonus,
             totalScore,
+          });
+          
+          setPhase('digits');
+        } 
+        // Handle 404 DELETED gallery scenario
+        else if (data.is404 && data.id) {
+          success = true; // We accept this as a valid roll outcome
+          
+          setResult({
+            id: data.id,
+            title: 'DATA EXPUNGED // GALLERY DELETED',
+            tags: [],
+            digitBonus: { score: 0, label: '' },
+            totalScore: 404,
+            isDeleted: true
           });
           
           setPhase('digits');
@@ -180,6 +199,7 @@ export default function RNGDle() {
   useEffect(() => {
     if (phase !== 'tags' || !result) return;
 
+    // If it's deleted or has no tags, instantly finish
     if (result.tags.length === 0) {
       setPhase('done');
       return;
@@ -199,34 +219,36 @@ export default function RNGDle() {
     return () => clearInterval(interval);
   }, [phase, result]);
 
-  // Derived values for rendering & sharing
+  // Derived values
   const isRolling = phase === 'fetching' || phase === 'digits' || phase === 'tags';
-  const finalRarity = result ? getRollRarity(result.totalScore, result.tags) : null;
+  const finalRarity = result ? getRollRarity(result.totalScore, result.tags, result.isDeleted) : null;
 
   // 3. SHARE HANDLER
   const handleShare = async () => {
     if (!result || !finalRarity) return;
 
     const overallEmoji = getRarityEmoji(finalRarity.name);
-    
-    // Sort a copy of tags to get highest value at the top for sharing
-    const topTags = [...result.tags].sort((a, b) => b.score - a.score);
-    const top3 = topTags.slice(0, 3);
-    const remainingCount = result.tags.length - top3.length;
-
     let shareText = `nhentai RNGdle 🤨🎲 ${result.id}\n\n`;
     shareText += `${overallEmoji} ${finalRarity.name}\n\n`;
     
-    top3.forEach((tag) => {
-      const tagEmoji = getTagEmoji(tag.count);
-      shareText += `${tagEmoji} ${tag.name}\n`;
-    });
+    // Only generate tag strings if the gallery isn't deleted
+    if (!result.isDeleted) {
+      const topTags = [...result.tags].sort((a, b) => b.score - a.score);
+      const top3 = topTags.slice(0, 3);
+      const remainingCount = result.tags.length - top3.length;
 
-    if (remainingCount > 0) {
-      shareText += `+${remainingCount} more\n`;
+      top3.forEach((tag) => {
+        const tagEmoji = getTagEmoji(tag.count);
+        shareText += `${tagEmoji} ${tag.name}\n`;
+      });
+
+      if (remainingCount > 0) {
+        shareText += `+${remainingCount} more\n`;
+      }
+      shareText += '\n';
     }
 
-    shareText += `\n${result.totalScore.toLocaleString()} PTS\nhttps://nhentai-rngdle.vercel.app/`;
+    shareText += `${result.totalScore.toLocaleString()} PTS\nhttps://nhentai-rngdle.vercel.app/`;
 
     try {
       await navigator.clipboard.writeText(shareText);
@@ -274,10 +296,11 @@ export default function RNGDle() {
                 <div 
                   key={idx} 
                   className={`w-12 h-16 md:w-16 md:h-20 bg-[#1f1f1f] border border-[#333] flex items-center justify-center rounded shadow-inner transition-colors duration-500
-                    ${(digit !== '' && digit === '0' && idx < 6 - String(result?.id || '').length) ? 'opacity-30' : 'opacity-100'}`
+                    ${(digit !== '' && digit === '0' && idx < 6 - String(result?.id || '').length) ? 'opacity-30' : 'opacity-100'}
+                    ${result?.isDeleted && phase === 'done' ? 'border-red-900 bg-black' : ''}`
                   }
                 >
-                  <span className="text-3xl md:text-5xl font-mono font-bold text-white">
+                  <span className={`text-3xl md:text-5xl font-mono font-bold ${result?.isDeleted && phase === 'done' ? 'text-red-600' : 'text-white'}`}>
                     {digit}
                   </span>
                 </div>
@@ -287,32 +310,34 @@ export default function RNGDle() {
             {/* Title */}
             <div className="min-h-[3rem] text-center mb-8">
               {phase !== 'fetching' && phase !== 'digits' && result && (
-                <h2 className="text-lg md:text-xl text-gray-300 font-semibold line-clamp-2 animate-fade-in">
+                <h2 className={`text-lg md:text-xl font-semibold line-clamp-2 animate-fade-in ${result.isDeleted ? 'text-red-500 tracking-widest' : 'text-gray-300'}`}>
                   {result.title}
                 </h2>
               )}
             </div>
 
             {/* Tags */}
-            <div className="min-h-[150px]">
-              {phase !== 'fetching' && phase !== 'digits' && result && (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {result.tags.slice(0, revealedTagCount).map((tag, idx) => (
-                      <div 
-                        key={idx} 
-                        className={`flex items-center gap-2 border bg-[#1f1f1f] px-3 py-1.5 rounded-md animate-fade-in-up ${tag.colorClass}`}
-                        style={{ animationFillMode: 'both' }}
-                      >
-                        <span className="font-semibold text-sm">{tag.name}</span>
-                        <span className="opacity-40 text-xs">|</span>
-                        <span className="text-xs font-mono">+{tag.score.toLocaleString()}</span>
-                      </div>
-                    ))}
+            {!result?.isDeleted && (
+              <div className="min-h-[150px]">
+                {phase !== 'fetching' && phase !== 'digits' && result && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {result.tags.slice(0, revealedTagCount).map((tag, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`flex items-center gap-2 border bg-[#1f1f1f] px-3 py-1.5 rounded-md animate-fade-in-up ${tag.colorClass}`}
+                          style={{ animationFillMode: 'both' }}
+                        >
+                          <span className="font-semibold text-sm">{tag.name}</span>
+                          <span className="opacity-40 text-xs">|</span>
+                          <span className="text-xs font-mono">+{tag.score.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Final Evaluation & Share */}
             <div className={`mt-8 pt-6 border-t border-[#333] text-center transition-opacity duration-1000 ${phase === 'done' ? 'opacity-100' : 'opacity-0'}`}>
@@ -324,7 +349,7 @@ export default function RNGDle() {
                     {finalRarity.name}
                   </span>
                   
-                  {result.digitBonus.score > 0 && (
+                  {result.digitBonus.score > 0 && !result.isDeleted && (
                     <p className="text-[#ed2553] text-xs font-bold tracking-widest mt-1 animate-pulse uppercase">
                       {result.digitBonus.label} BONUS: +{result.digitBonus.score.toLocaleString()}
                     </p>
