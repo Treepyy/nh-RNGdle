@@ -74,16 +74,63 @@ function getTagEmoji(count: number) {
 }
 
 export default function RNGDle() {
+  const [mounted, setMounted] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
   const [result, setResult] = useState<RollResult | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [isCopied, setIsCopied] = useState(false);
+  const [hasRolledToday, setHasRolledToday] = useState(false);
+  const [timeLeft, setTimeLeft] = useState('');
   
   const [displayDigits, setDisplayDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [revealedTagCount, setRevealedTagCount] = useState<number>(0);
 
+  // 0. ON MOUNT: Check local storage for today's roll
+  useEffect(() => {
+    setMounted(true);
+    const savedRoll = localStorage.getItem('rngdle_daily');
+    
+    if (savedRoll) {
+      try {
+        const parsed = JSON.parse(savedRoll);
+        const today = new Date().toDateString();
+        
+        // If the saved date matches today, restore the game state immediately
+        if (parsed.date === today) {
+          setHasRolledToday(true);
+          setResult(parsed.result);
+          setPhase('done');
+          setRevealedTagCount(parsed.result.tags.length);
+          setDisplayDigits(String(parsed.result.id).padStart(6, '0').split(''));
+        }
+      } catch (e) {
+        console.error('Failed to parse saved roll');
+      }
+    }
+  }, []);
+
+  // 0.5 COUNTDOWN TIMER: Calculates time until midnight
+  useEffect(() => {
+    if (!hasRolledToday) return;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const diff = tomorrow.getTime() - now.getTime();
+      
+      const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const m = Math.floor((diff / 1000 / 60) % 60);
+      const s = Math.floor((diff / 1000) % 60);
+      
+      setTimeLeft(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [hasRolledToday]);
+
   const handleRoll = async () => {
     if (phase !== 'idle' && phase !== 'done') return;
+    if (hasRolledToday) return; // Prevent rolling if already rolled
     
     setPhase('fetching');
     setResult(null);
@@ -102,10 +149,8 @@ export default function RNGDle() {
         const res = await fetch('/api/roll');
         const data = await res.json();
 
-        // Handle a successfully retrieved gallery
         if (data.success) {
           success = true;
-          
           const digitBonus = getDigitBonus(data.id);
           let totalScore = digitBonus.score;
           
@@ -123,29 +168,35 @@ export default function RNGDle() {
 
           processedTags.sort((a, b) => a.score - b.score);
 
-          setResult({
+          const finalResult = {
             id: data.id,
             title: data.title,
             tags: processedTags,
             digitBonus,
             totalScore,
-          });
-          
+            isDeleted: false
+          };
+
+          setResult(finalResult);
+          setHasRolledToday(true);
+          localStorage.setItem('rngdle_daily', JSON.stringify({ date: new Date().toDateString(), result: finalResult }));
           setPhase('digits');
-        } 
-        // Handle 404 DELETED gallery scenario
-        else if (data.is404 && data.id) {
-          success = true; // We accept this as a valid roll outcome
           
-          setResult({
+        } else if (data.is404 && data.id) {
+          success = true; 
+          
+          const finalResult = {
             id: data.id,
             title: 'DATA EXPUNGED // GALLERY DELETED',
             tags: [],
             digitBonus: { score: 0, label: '' },
             totalScore: 404,
             isDeleted: true
-          });
-          
+          };
+
+          setResult(finalResult);
+          setHasRolledToday(true);
+          localStorage.setItem('rngdle_daily', JSON.stringify({ date: new Date().toDateString(), result: finalResult }));
           setPhase('digits');
         }
       } catch (err) {
@@ -161,6 +212,7 @@ export default function RNGDle() {
 
   // 1. DIGIT ANIMATION HOOK
   useEffect(() => {
+    // Only run animation if we just fetched it. If it was loaded from local storage, skip.
     if (phase !== 'digits' || !result) return;
     
     const target = String(result.id).padStart(6, '0').split('');
@@ -199,7 +251,6 @@ export default function RNGDle() {
   useEffect(() => {
     if (phase !== 'tags' || !result) return;
 
-    // If it's deleted or has no tags, instantly finish
     if (result.tags.length === 0) {
       setPhase('done');
       return;
@@ -231,7 +282,6 @@ export default function RNGDle() {
     let shareText = `nhentai RNGdle 🤨🎲 ${result.id}\n\n`;
     shareText += `${overallEmoji} ${finalRarity.name}\n\n`;
     
-    // Only generate tag strings if the gallery isn't deleted
     if (!result.isDeleted) {
       const topTags = [...result.tags].sort((a, b) => b.score - a.score);
       const top3 = topTags.slice(0, 3);
@@ -259,6 +309,11 @@ export default function RNGDle() {
     }
   };
 
+  // Prevent hydration mismatch by rendering empty background until mounted
+  if (!mounted) {
+    return <main className="min-h-screen bg-[#1f1f1f]"></main>;
+  }
+
   return (
     <main className="min-h-screen bg-[#1f1f1f] text-gray-200 flex flex-col items-center py-12 px-4 font-sans selection:bg-[#ed2553] selection:text-white">
       <div className="max-w-3xl w-full flex flex-col items-center gap-10">
@@ -269,21 +324,24 @@ export default function RNGDle() {
             rng<span className="text-[#ed2553]">dle</span>
           </h1>
           <p className="text-gray-400 font-semibold tracking-wide text-sm">
-            GACHA NUKE CODES
+            DAILY GACHA NUKE CODES
           </p>
         </div>
 
         {/* Action Button */}
         <button
           onClick={handleRoll}
-          disabled={isRolling}
+          disabled={isRolling || hasRolledToday}
           className={`px-10 py-4 rounded font-bold tracking-widest uppercase transition-all duration-200 
-            ${isRolling 
+            ${(isRolling || hasRolledToday)
               ? 'bg-[#141414] text-gray-600 border border-[#333] cursor-not-allowed' 
               : 'bg-[#ed2553] text-white hover:bg-[#c91d44] hover:shadow-[0_0_15px_rgba(237,37,83,0.5)] active:scale-95'
             }`}
         >
-          {phase === 'fetching' ? `Locating... (${attempts})` : isRolling ? 'Scanning...' : 'Roll Code'}
+          {phase === 'fetching' ? `Locating... (${attempts})` 
+            : isRolling ? 'Scanning...' 
+            : (hasRolledToday && phase === 'done') ? `Next Code In ${timeLeft}` 
+            : 'Roll Daily Code'}
         </button>
 
         {/* Display Area */}
