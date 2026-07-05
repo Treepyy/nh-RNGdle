@@ -326,6 +326,7 @@ export default function RNGDle() {
           <p className="text-gray-400 font-semibold tracking-wide text-sm">
             DAILY GACHA NUKE CODES
           </p>
+          <p className="mt-8 text-xs text-gray-500 text-center">Note: If you encounter any issues mention or dm @treepy on Discord. This is a parody website.</p>
         </div>
 
         {/* Action Button */}
