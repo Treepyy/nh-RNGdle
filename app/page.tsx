@@ -321,7 +321,7 @@ export default function RNGDle() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-6xl font-black tracking-tighter text-white">
-            rng<span className="text-[#ed2553]">dle</span>
+            <span className="text-[#ed2553]">nhentai</span> RNGdle
           </h1>
           <p className="text-gray-400 font-semibold tracking-wide text-sm">
             DAILY GACHA NUKE CODES
