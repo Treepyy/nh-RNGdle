@@ -2,7 +2,8 @@
 import { NextResponse } from 'next/server';
 
 export async function GET() {
-  const randomId = Math.floor(Math.random() * 500000) + 1;
+  const randomId = Math.floor(Math.random() * 661547) + 1;
+  console.log(randomId)
 
   try {
     const res = await fetch(`https://nhentai.net/api/v2/galleries/${randomId}`, {
@@ -20,6 +21,7 @@ export async function GET() {
 
     // Read as text first to prevent JSON parse errors if Cloudflare intercepts the request
     const text = await res.text();
+    console.log(text)
     
     try {
       const data = JSON.parse(text);
