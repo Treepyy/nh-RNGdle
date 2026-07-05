@@ -21,7 +21,6 @@ type RollResult = {
 
 type Phase = 'idle' | 'fetching' | 'digits' | 'tags' | 'done';
 
-// Generates bonus score based on digit length
 function getDigitBonus(id: number) {
   const digits = String(id).length;
   switch (digits) {
@@ -34,24 +33,47 @@ function getDigitBonus(id: number) {
   }
 }
 
-// Determines the final rarity class
 function getRollRarity(score: number, tags: RolledTag[]) {
-  // If ALL tags are common (>= 50k count), it's TRASH regardless of score
   if (tags.length > 0 && tags.every(t => t.count >= 50000)) {
     return { name: 'TRASH', class: 'text-stone-500 border-stone-600 shadow-[0_0_10px_rgba(120,113,108,0.3)] bg-stone-900/50' };
   }
   
-  if (score >= 15000) return { name: 'LEGENDARY', class: 'text-yellow-400 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)]' };
-  if (score >= 7000) return { name: 'EPIC', class: 'text-purple-400 border-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.5)]' };
-  if (score >= 3000) return { name: 'RARE', class: 'text-blue-400 border-blue-400' };
+  if (score >= 100000) return { name: 'MYTHIC', class: 'text-red-500 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]' };
+  if (score >= 50000) return { name: 'LEGENDARY', class: 'text-yellow-400 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)]' };
+  if (score >= 10000) return { name: 'EPIC', class: 'text-purple-400 border-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.5)]' };
+  if (score >= 5000) return { name: 'RARE', class: 'text-blue-400 border-blue-400' };
   if (score >= 1000) return { name: 'UNCOMMON', class: 'text-green-400 border-green-400' };
   return { name: 'COMMON', class: 'text-gray-400 border-gray-600' };
+}
+
+// Maps the final roll rarity tier to the requested box emoji
+function getRarityEmoji(rarityName: string) {
+  switch (rarityName) {
+    case 'TRASH': return '🟫';
+    case 'COMMON': return '⬜';
+    case 'UNCOMMON': return '🟩';
+    case 'RARE': return '🟦';
+    case 'EPIC': return '🟪';
+    case 'LEGENDARY': return '🟧';
+    case 'MYTHIC': return '🟥';
+    default: return '⬜';
+  }
+}
+
+// Maps an individual tag's count to its corresponding box emoji
+function getTagEmoji(count: number) {
+  if (count < 100) return '🟧'; // Legendary
+  if (count < 1000) return '🟪'; // Epic
+  if (count < 10000) return '🟦'; // Rare
+  if (count < 50000) return '🟩'; // Uncommon
+  return '⬜'; // Common
 }
 
 export default function RNGDle() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [result, setResult] = useState<RollResult | null>(null);
   const [attempts, setAttempts] = useState(0);
+  const [isCopied, setIsCopied] = useState(false);
   
   const [displayDigits, setDisplayDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [revealedTagCount, setRevealedTagCount] = useState<number>(0);
@@ -62,6 +84,7 @@ export default function RNGDle() {
     setPhase('fetching');
     setResult(null);
     setRevealedTagCount(0);
+    setIsCopied(false);
     setDisplayDigits(['', '', '', '', '', '']);
     
     let success = false;
@@ -83,7 +106,6 @@ export default function RNGDle() {
           
           const processedTags: RolledTag[] = data.tags.map((tagName: string) => {
             const tagData = localTags[tagName] || { count: 100000 }; 
-            // Multiplied by 20 for inflated score adjustments
             const score = getTagScore(tagData.count) * 20; 
             totalScore += score;
             return {
@@ -94,7 +116,7 @@ export default function RNGDle() {
             };
           });
 
-          // Sort tags least rare -> rarest
+          // Sort tags least rare -> rarest for the visual reveal
           processedTags.sort((a, b) => a.score - b.score);
 
           setResult({
@@ -177,8 +199,43 @@ export default function RNGDle() {
     return () => clearInterval(interval);
   }, [phase, result]);
 
+  // Derived values for rendering & sharing
   const isRolling = phase === 'fetching' || phase === 'digits' || phase === 'tags';
   const finalRarity = result ? getRollRarity(result.totalScore, result.tags) : null;
+
+  // 3. SHARE HANDLER
+  const handleShare = async () => {
+    if (!result || !finalRarity) return;
+
+    const overallEmoji = getRarityEmoji(finalRarity.name);
+    
+    // Sort a copy of tags to get highest value at the top for sharing
+    const topTags = [...result.tags].sort((a, b) => b.score - a.score);
+    const top3 = topTags.slice(0, 3);
+    const remainingCount = result.tags.length - top3.length;
+
+    let shareText = `nhentai RNGdle 🤨🎲 ${result.id}\n\n`;
+    shareText += `${overallEmoji} ${finalRarity.name}\n\n`;
+    
+    top3.forEach((tag) => {
+      const tagEmoji = getTagEmoji(tag.count);
+      shareText += `${tagEmoji} ${tag.name}\n`;
+    });
+
+    if (remainingCount > 0) {
+      shareText += `+${remainingCount} more\n`;
+    }
+
+    shareText += `\n${result.totalScore.toLocaleString()} PTS\nhttps://nhentai-rngdle.vercel.app/`;
+
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 3000);
+    } catch (err) {
+      console.error('Failed to copy to clipboard', err);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#1f1f1f] text-gray-200 flex flex-col items-center py-12 px-4 font-sans selection:bg-[#ed2553] selection:text-white">
@@ -187,7 +244,7 @@ export default function RNGDle() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-6xl font-black tracking-tighter text-white">
-            <span className="text-[#ed2553]">nhentai</span> rng<span className="text-[#ed2553]">dle</span>
+            rng<span className="text-[#ed2553]">dle</span>
           </h1>
           <p className="text-gray-400 font-semibold tracking-wide text-sm">
             GACHA NUKE CODES
@@ -209,7 +266,7 @@ export default function RNGDle() {
 
         {/* Display Area */}
         {(phase !== 'idle') && (
-          <div className="w-full bg-[#141414] border-t-4 border-[#ed2553] rounded shadow-2xl p-6 md:p-8">
+          <div className="w-full bg-[#141414] border-t-4 border-[#ed2553] rounded shadow-2xl p-6 md:p-8 mb-12">
             
             {/* Slot Digits */}
             <div className="flex justify-center gap-2 md:gap-4 mb-8">
@@ -257,7 +314,7 @@ export default function RNGDle() {
               )}
             </div>
 
-            {/* Final Evaluation */}
+            {/* Final Evaluation & Share */}
             <div className={`mt-8 pt-6 border-t border-[#333] text-center transition-opacity duration-1000 ${phase === 'done' ? 'opacity-100' : 'opacity-0'}`}>
               <p className="text-gray-500 text-sm uppercase tracking-widest font-bold mb-2">Final Evaluation</p>
               
@@ -267,7 +324,6 @@ export default function RNGDle() {
                     {finalRarity.name}
                   </span>
                   
-                  {/* Render the Bonus if it's not a 6-digit modern code */}
                   {result.digitBonus.score > 0 && (
                     <p className="text-[#ed2553] text-xs font-bold tracking-widest mt-1 animate-pulse uppercase">
                       {result.digitBonus.label} BONUS: +{result.digitBonus.score.toLocaleString()}
@@ -277,6 +333,20 @@ export default function RNGDle() {
                   <p className="text-5xl font-black text-white mt-2">
                     {result.totalScore.toLocaleString()} <span className="text-lg text-gray-500 font-normal">pts</span>
                   </p>
+
+                  {/* Share Button (Only visible when completely done) */}
+                  {phase === 'done' && (
+                    <button
+                      onClick={handleShare}
+                      className={`mt-6 px-6 py-2 rounded font-bold tracking-wider uppercase transition-all duration-300
+                        ${isCopied 
+                          ? 'bg-green-600 text-white border-green-500' 
+                          : 'bg-[#1f1f1f] text-gray-300 border border-[#444] hover:bg-[#333] hover:text-white hover:border-gray-400'
+                        }`}
+                    >
+                      {isCopied ? 'Copied to Clipboard! ✓' : 'Share Roll ➦'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
