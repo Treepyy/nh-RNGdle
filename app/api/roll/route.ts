@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const randomId = Math.floor(Math.random() * 661547) + 1;
-  // for testing: 533649, 177013
-  // const randomId = 661010
+  // for testing: 533649 - big tags, 177013 - deleted, 67124 - no tags + no favorites + 5 digits
+  // const randomId = 177013
 
   try {
     const res = await fetch(`https://nhentai.net/api/v2/galleries/${randomId}`, {
@@ -31,7 +31,8 @@ export async function GET() {
         success: true, 
         id: randomId, 
         title: data.title?.english || data.title?.japanese || 'Unknown',
-        tags: extractedTags 
+        tags: extractedTags,
+        num_favorites: data.num_favorites || 0
       }, { status: 200 });
 
     } catch (parseError) {

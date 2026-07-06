@@ -16,6 +16,7 @@ type RollResult = {
   title: string;
   tags: RolledTag[];
   digitBonus: { score: number; label: string };
+  favorites: number;
   totalScore: number;
   isDeleted?: boolean;
 };
@@ -157,7 +158,10 @@ export default function RNGDle() {
         if (data.success) {
           success = true;
           const digitBonus = getDigitBonus(data.id);
-          let totalScore = digitBonus.score;
+          const favoritesBonus = data.num_favorites || 0;
+          
+          // Start with bonuses
+          let totalScore = digitBonus.score + favoritesBonus;
           
           const processedTags: RolledTag[] = data.tags.map((tagName: string) => {
             const tagData = localTags[tagName] || { count: 100000 }; 
@@ -172,12 +176,16 @@ export default function RNGDle() {
           });
 
           processedTags.sort((a, b) => a.score - b.score);
+          
+          // Override to 0 if no tags are present
+          if (data.tags.length === 0) totalScore = 0;
 
           const finalResult = {
             id: data.id,
             title: data.title,
             tags: processedTags,
             digitBonus,
+            favorites: favoritesBonus,
             totalScore,
             isDeleted: false
           };
@@ -196,6 +204,7 @@ export default function RNGDle() {
             tags: [],
             digitBonus: { score: 0, label: '' },
             totalScore: 404,
+            favorites: 0,
             isDeleted: true
           };
 
@@ -301,6 +310,14 @@ export default function RNGDle() {
         shareText += `+${remainingCount} more\n`;
       }
       shareText += '\n';
+    }
+
+    if (result.digitBonus.score > 0 && !result.isDeleted && result.tags.length > 0) {
+      shareText += `✨ ${result.digitBonus.label}: +${result.digitBonus.score.toLocaleString()}\n`;
+    }
+    
+    if (result.favorites > 0 && !result.isDeleted && result.tags.length > 0) {
+      shareText += `💕 +${result.favorites.toLocaleString()} Favorites\n`;
     }
 
     shareText += `${result.totalScore.toLocaleString()} PTS\nhttps://nhentai-rngdle.vercel.app/`;
@@ -416,6 +433,12 @@ export default function RNGDle() {
                   {result.digitBonus.score > 0 && !result.isDeleted && (
                     <p className="text-[#ed2553] text-xs font-bold tracking-widest mt-1 animate-pulse uppercase">
                       {result.digitBonus.label} BONUS: +{result.digitBonus.score.toLocaleString()}
+                    </p>
+                  )}
+
+                  {result.favorites > 0 && !result.isDeleted && result.tags.length > 0 && (
+                    <p className="text-blue-400 text-xs font-bold tracking-widest mt-1 uppercase">
+                      FAVORITES BONUS: +{result.favorites.toLocaleString()}
                     </p>
                   )}
 
