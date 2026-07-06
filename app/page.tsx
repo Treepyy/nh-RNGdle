@@ -38,6 +38,10 @@ function getRollRarity(score: number, tags: RolledTag[], isDeleted?: boolean) {
   if (isDeleted) {
     return { name: 'DELETED', class: 'text-zinc-400 border-black bg-black shadow-[0_0_20px_rgba(0,0,0,0.8)]' };
   }
+
+  if (tags.length === 0) {
+    return { name: 'ZERO TAGS', class: 'text-zinc-500 border-dashed border-zinc-600 bg-zinc-900/30' };
+  }
   
   if (tags.length > 0 && tags.every(t => t.count >= 50000)) {
     return { name: 'TRASH', class: 'text-stone-500 border-stone-600 shadow-[0_0_10px_rgba(120,113,108,0.3)] bg-stone-900/50' };
@@ -53,6 +57,7 @@ function getRollRarity(score: number, tags: RolledTag[], isDeleted?: boolean) {
 
 function getRarityEmoji(rarityName: string) {
   switch (rarityName) {
+    case 'ZERO TAGS': return '0️⃣';
     case 'DELETED': return '⬛';
     case 'TRASH': return '🟫';
     case 'COMMON': return '⬜';
@@ -282,7 +287,7 @@ export default function RNGDle() {
     let shareText = `nhentai RNGdle 🤨🎲 ${result.id}\n\n`;
     shareText += `${overallEmoji} ${finalRarity.name}\n\n`;
     
-    if (!result.isDeleted) {
+    if (!result.isDeleted && result.tags.length > 0) {
       const topTags = [...result.tags].sort((a, b) => b.score - a.score);
       const top3 = topTags.slice(0, 3);
       const remainingCount = result.tags.length - top3.length;

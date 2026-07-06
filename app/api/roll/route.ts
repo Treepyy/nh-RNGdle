@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   const randomId = Math.floor(Math.random() * 661547) + 1;
   // for testing: 533649, 177013
-  // const randomId = 177013
+  // const randomId = 661010
 
   try {
     const res = await fetch(`https://nhentai.net/api/v2/galleries/${randomId}`, {
