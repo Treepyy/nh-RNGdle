@@ -178,7 +178,7 @@ export default function RNGDle() {
           processedTags.sort((a, b) => a.score - b.score);
           
           // Override to 0 if no tags are present
-          if (data.tags.length === 0) totalScore = 0;
+          // if (data.tags.length === 0) totalScore = 0;
 
           const finalResult = {
             id: data.id,
@@ -312,11 +312,11 @@ export default function RNGDle() {
       shareText += '\n';
     }
 
-    if (result.digitBonus.score > 0 && !result.isDeleted && result.tags.length > 0) {
+    if (result.digitBonus.score > 0 && !result.isDeleted) {
       shareText += `✨ ${result.digitBonus.label}: +${result.digitBonus.score.toLocaleString()}\n`;
     }
     
-    if (result.favorites > 0 && !result.isDeleted && result.tags.length > 0) {
+    if (result.favorites > 0 && !result.isDeleted) {
       shareText += `💕 +${result.favorites.toLocaleString()} Favorites\n`;
     }
 
@@ -436,7 +436,7 @@ export default function RNGDle() {
                     </p>
                   )}
 
-                  {result.favorites > 0 && !result.isDeleted && result.tags.length > 0 && (
+                  {result.favorites > 0 && !result.isDeleted && (
                     <p className="text-blue-400 text-xs font-bold tracking-widest mt-1 uppercase">
                       FAVORITES BONUS: +{result.favorites.toLocaleString()}
                     </p>
