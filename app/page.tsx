@@ -392,7 +392,15 @@ export default function RNGDle() {
             <div className="min-h-[3rem] text-center mb-8">
               {phase !== 'fetching' && phase !== 'digits' && result && (
                 <h2 className={`text-lg md:text-xl font-semibold line-clamp-2 animate-fade-in ${result.isDeleted ? 'text-red-500 tracking-widest' : 'text-gray-300'}`}>
-                  {result.title}
+                  <a
+                    href={`https://nhentai.net/g/${result.id}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="View on nhentai"
+                    className={`hover:underline underline-offset-4 transition-colors duration-200 ${result.isDeleted ? 'hover:text-red-400' : 'hover:text-[#ed2553]'}`}
+                  >
+                    {result.title}
+                  </a>
                 </h2>
               )}
             </div>
