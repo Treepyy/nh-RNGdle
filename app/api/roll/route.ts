@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   const randomId = Math.floor(Math.random() * 661547) + 1;
   // for testing: 533649 - big tags, 177013 - deleted, 67124 - no tags + no favorites + 5 digits
-  // const randomId = 177013
+  // const randomId = 654093
 
   try {
     const res = await fetch(`https://nhentai.net/api/v2/galleries/${randomId}`, {
@@ -20,16 +20,16 @@ export async function GET() {
     }
 
     const text = await res.text();
-    
+
     try {
       const data = JSON.parse(text);
       const extractedTags = data.tags
-        .filter((t: any) => t.type === 'tag') 
+        .filter((t: any) => t.type === 'tag')
         .map((t: any) => t.name);
 
-      return NextResponse.json({ 
-        success: true, 
-        id: randomId, 
+      return NextResponse.json({
+        success: true,
+        id: randomId,
         title: data.title?.english || data.title?.japanese || 'Unknown',
         tags: extractedTags,
         num_favorites: data.num_favorites || 0

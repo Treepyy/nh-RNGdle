@@ -19,6 +19,7 @@ type RollResult = {
   favorites: number;
   totalScore: number;
   isDeleted?: boolean;
+  hasAIGenerated?: boolean;
 };
 
 type Phase = 'idle' | 'fetching' | 'digits' | 'tags' | 'done';
@@ -43,16 +44,16 @@ function getRollRarity(score: number, tags: RolledTag[], isDeleted?: boolean) {
   if (tags.length === 0) {
     return { name: 'ZERO TAGS', class: 'text-zinc-500 border-dashed border-zinc-600 bg-zinc-900/30' };
   }
-  
-  if (tags.length > 0 && tags.every(t => t.count >= 50000)) {
+
+  if ((tags.length > 0 && tags.every(t => t.count >= 50000)) || tags.some(t => t.name === 'ai generated')) {
     return { name: 'TRASH', class: 'text-stone-500 border-stone-600 shadow-[0_0_10px_rgba(120,113,108,0.3)] bg-stone-900/50' };
   }
-  
+
   if (score >= 100000) return { name: 'MYTHIC', class: 'text-red-500 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]' };
   if (score >= 50000) return { name: 'LEGENDARY', class: 'text-yellow-400 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)]' };
   if (score >= 20000) return { name: 'EPIC', class: 'text-purple-400 border-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.5)]' };
   if (score >= 5000) return { name: 'RARE', class: 'text-blue-400 border-blue-400' };
-  if (score >= 1000) return { name: 'UNCOMMON', class: 'text-green-400 border-green-400' };
+  if (score >= 2000) return { name: 'UNCOMMON', class: 'text-green-400 border-green-400' };
   return { name: 'COMMON', class: 'text-gray-400 border-gray-600' };
 }
 
@@ -87,7 +88,7 @@ export default function RNGDle() {
   const [isCopied, setIsCopied] = useState(false);
   const [hasRolledToday, setHasRolledToday] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
-  
+
   const [displayDigits, setDisplayDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [revealedTagCount, setRevealedTagCount] = useState<number>(0);
 
@@ -95,19 +96,37 @@ export default function RNGDle() {
   useEffect(() => {
     setMounted(true);
     const savedRoll = localStorage.getItem('rngdle_daily');
-    
+
     if (savedRoll) {
       try {
         const parsed = JSON.parse(savedRoll);
         const today = new Date().toDateString();
-        
+
         // If the saved date matches today, restore the game state immediately
         if (parsed.date === today) {
+          const result = parsed.result;
+
+          // Retroactively apply any score patches to today's saved roll
+          if (!result.isDeleted && result.tags) {
+            let recalculatedScore = (result.digitBonus?.score || 0) + (result.favorites || 0);
+            result.tags.forEach((t: RolledTag) => {
+              recalculatedScore += t.score;
+            });
+
+            const hasAIGenerated = result.tags.some((t: RolledTag) => t.name === 'ai generated');
+            if (hasAIGenerated) {
+              recalculatedScore = Math.floor(recalculatedScore * 0.01);
+            }
+
+            result.totalScore = recalculatedScore;
+            result.hasAIGenerated = hasAIGenerated;
+          }
+
           setHasRolledToday(true);
-          setResult(parsed.result);
+          setResult(result);
           setPhase('done');
-          setRevealedTagCount(parsed.result.tags.length);
-          setDisplayDigits(String(parsed.result.id).padStart(6, '0').split(''));
+          setRevealedTagCount(result.tags.length);
+          setDisplayDigits(String(result.id).padStart(6, '0').split(''));
         }
       } catch (e) {
         console.error('Failed to parse saved roll');
@@ -123,11 +142,11 @@ export default function RNGDle() {
       const now = new Date();
       const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       const diff = tomorrow.getTime() - now.getTime();
-      
+
       const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
       const m = Math.floor((diff / 1000 / 60) % 60);
       const s = Math.floor((diff / 1000) % 60);
-      
+
       setTimeLeft(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
     }, 1000);
 
@@ -137,20 +156,20 @@ export default function RNGDle() {
   const handleRoll = async () => {
     if (phase !== 'idle' && phase !== 'done') return;
     if (hasRolledToday) return; // Prevent rolling if already rolled
-    
+
     setPhase('fetching');
     setResult(null);
     setRevealedTagCount(0);
     setIsCopied(false);
     setDisplayDigits(['', '', '', '', '', '']);
-    
+
     let success = false;
     let currentAttempt = 0;
 
     while (!success && currentAttempt < 5) {
       currentAttempt++;
       setAttempts(currentAttempt);
-      
+
       try {
         const res = await fetch('/api/roll');
         const data = await res.json();
@@ -159,13 +178,13 @@ export default function RNGDle() {
           success = true;
           const digitBonus = getDigitBonus(data.id);
           const favoritesBonus = data.num_favorites || 0;
-          
+
           // Start with bonuses
           let totalScore = digitBonus.score + favoritesBonus;
-          
+
           const processedTags: RolledTag[] = data.tags.map((tagName: string) => {
-            const tagData = localTags[tagName] || { count: 100000 }; 
-            const score = getTagScore(tagData.count) * 20; 
+            const tagData = localTags[tagName] || { count: 100000 };
+            const score = getTagScore(tagData.count) * 20;
             totalScore += score;
             return {
               name: tagName,
@@ -176,9 +195,14 @@ export default function RNGDle() {
           });
 
           processedTags.sort((a, b) => a.score - b.score);
-          
+
           // Override to 0 if no tags are present
           // if (data.tags.length === 0) totalScore = 0;
+
+          const hasAIGenerated = data.tags.includes('ai generated');
+          if (hasAIGenerated) {
+            totalScore = Math.floor(totalScore * 0.01);
+          }
 
           const finalResult = {
             id: data.id,
@@ -187,17 +211,18 @@ export default function RNGDle() {
             digitBonus,
             favorites: favoritesBonus,
             totalScore,
-            isDeleted: false
+            isDeleted: false,
+            hasAIGenerated
           };
 
           setResult(finalResult);
           setHasRolledToday(true);
           localStorage.setItem('rngdle_daily', JSON.stringify({ date: new Date().toDateString(), result: finalResult }));
           setPhase('digits');
-          
+
         } else if (data.is404 && data.id) {
-          success = true; 
-          
+          success = true;
+
           const finalResult = {
             id: data.id,
             title: 'DATA EXPUNGED // GALLERY DELETED',
@@ -217,7 +242,7 @@ export default function RNGDle() {
         console.error('Roll failed', err);
       }
     }
-    
+
     if (!success) {
       setPhase('idle');
       alert('Failed to roll after 5 attempts. Cloudflare might be blocking requests.');
@@ -228,7 +253,7 @@ export default function RNGDle() {
   useEffect(() => {
     // Only run animation if we just fetched it. If it was loaded from local storage, skip.
     if (phase !== 'digits' || !result) return;
-    
+
     const target = String(result.id).padStart(6, '0').split('');
     const startTimes = [0, 500, 1000, 1500, 2000, 2500];
     const lockTimes = [500, 1000, 1500, 2000, 2500, 3000];
@@ -241,10 +266,10 @@ export default function RNGDle() {
       const nextDigits = target.map((t, i) => {
         if (elapsed < startTimes[i]) {
           allLocked = false;
-          return ''; 
+          return '';
         }
         if (elapsed >= lockTimes[i]) {
-          return t; 
+          return t;
         }
         allLocked = false;
         return String(Math.floor(Math.random() * 10));
@@ -295,7 +320,7 @@ export default function RNGDle() {
     const overallEmoji = getRarityEmoji(finalRarity.name);
     let shareText = `nhentai RNGdle 🤨🎲 ${result.id}\n\n`;
     shareText += `${overallEmoji} ${finalRarity.name}\n\n`;
-    
+
     if (!result.isDeleted && result.tags.length > 0) {
       const topTags = [...result.tags].sort((a, b) => b.score - a.score);
       const top3 = topTags.slice(0, 3);
@@ -315,9 +340,13 @@ export default function RNGDle() {
     if (result.digitBonus.score > 0 && !result.isDeleted) {
       shareText += `✨ ${result.digitBonus.label}: +${result.digitBonus.score.toLocaleString()}\n`;
     }
-    
+
     if (result.favorites > 0 && !result.isDeleted) {
       shareText += `💕 +${result.favorites.toLocaleString()} Favorites\n`;
+    }
+
+    if (result.hasAIGenerated) {
+      shareText += `🤖 AI Generated Penalty (-99%)\n`;
     }
 
     shareText += `${result.totalScore.toLocaleString()} PTS\nhttps://nhentai-rngdle.vercel.app/`;
@@ -339,7 +368,7 @@ export default function RNGDle() {
   return (
     <main className="min-h-screen bg-[#1f1f1f] text-gray-200 flex flex-col items-center py-12 px-4 font-sans selection:bg-[#ed2553] selection:text-white">
       <div className="max-w-3xl w-full flex flex-col items-center gap-10">
-        
+
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-6xl font-black tracking-tighter text-white">
@@ -357,25 +386,25 @@ export default function RNGDle() {
           disabled={isRolling || hasRolledToday}
           className={`px-10 py-4 rounded font-bold tracking-widest uppercase transition-all duration-200 
             ${(isRolling || hasRolledToday)
-              ? 'bg-[#141414] text-gray-600 border border-[#333] cursor-not-allowed' 
+              ? 'bg-[#141414] text-gray-600 border border-[#333] cursor-not-allowed'
               : 'bg-[#ed2553] text-white hover:bg-[#c91d44] hover:shadow-[0_0_15px_rgba(237,37,83,0.5)] active:scale-95'
             }`}
         >
-          {phase === 'fetching' ? `Locating... (${attempts})` 
-            : isRolling ? 'Scanning...' 
-            : (hasRolledToday && phase === 'done') ? `Next Code In ${timeLeft}` 
-            : 'Roll Daily Code'}
+          {phase === 'fetching' ? `Locating... (${attempts})`
+            : isRolling ? 'Scanning...'
+              : (hasRolledToday && phase === 'done') ? `Next Code In ${timeLeft}`
+                : 'Roll Daily Code'}
         </button>
 
         {/* Display Area */}
         {(phase !== 'idle') && (
           <div className="w-full bg-[#141414] border-t-4 border-[#ed2553] rounded shadow-2xl p-6 md:p-8 mb-12">
-            
+
             {/* Slot Digits */}
             <div className="flex justify-center gap-2 md:gap-4 mb-8">
               {displayDigits.map((digit, idx) => (
-                <div 
-                  key={idx} 
+                <div
+                  key={idx}
                   className={`w-12 h-16 md:w-16 md:h-20 bg-[#1f1f1f] border border-[#333] flex items-center justify-center rounded shadow-inner transition-colors duration-500
                     ${(digit !== '' && digit === '0' && idx < 6 - String(result?.id || '').length) ? 'opacity-30' : 'opacity-100'}
                     ${result?.isDeleted && phase === 'done' ? 'border-red-900 bg-black' : ''}`
@@ -412,8 +441,8 @@ export default function RNGDle() {
                   <div className="space-y-4">
                     <div className="flex flex-wrap gap-2 justify-center">
                       {result.tags.slice(0, revealedTagCount).map((tag, idx) => (
-                        <div 
-                          key={idx} 
+                        <div
+                          key={idx}
                           className={`flex items-center gap-2 border bg-[#1f1f1f] px-3 py-1.5 rounded-md animate-fade-in-up ${tag.colorClass}`}
                           style={{ animationFillMode: 'both' }}
                         >
@@ -431,13 +460,13 @@ export default function RNGDle() {
             {/* Final Evaluation & Share */}
             <div className={`mt-8 pt-6 border-t border-[#333] text-center transition-opacity duration-1000 ${phase === 'done' ? 'opacity-100' : 'opacity-0'}`}>
               <p className="text-gray-500 text-sm uppercase tracking-widest font-bold mb-2">Final Evaluation</p>
-              
+
               {result && finalRarity && (
                 <div className="flex flex-col items-center gap-2">
                   <span className={`px-4 py-1 border-2 rounded font-black tracking-widest ${finalRarity.class}`}>
                     {finalRarity.name}
                   </span>
-                  
+
                   {result.digitBonus.score > 0 && !result.isDeleted && (
                     <p className="text-[#ed2553] text-xs font-bold tracking-widest mt-1 animate-pulse uppercase">
                       {result.digitBonus.label} BONUS: +{result.digitBonus.score.toLocaleString()}
@@ -450,6 +479,12 @@ export default function RNGDle() {
                     </p>
                   )}
 
+                  {result.hasAIGenerated && (
+                    <p className="text-red-500 text-xs font-bold tracking-widest mt-1 uppercase animate-pulse">
+                      AI GENERATED PENALTY: -99% SCORE
+                    </p>
+                  )}
+
                   <p className="text-5xl font-black text-white mt-2">
                     {result.totalScore.toLocaleString()} <span className="text-lg text-gray-500 font-normal">pts</span>
                   </p>
@@ -459,8 +494,8 @@ export default function RNGDle() {
                     <button
                       onClick={handleShare}
                       className={`mt-6 px-6 py-2 rounded font-bold tracking-wider uppercase transition-all duration-300
-                        ${isCopied 
-                          ? 'bg-green-600 text-white border-green-500' 
+                        ${isCopied
+                          ? 'bg-green-600 text-white border-green-500'
                           : 'bg-[#1f1f1f] text-gray-300 border border-[#444] hover:bg-[#333] hover:text-white hover:border-gray-400'
                         }`}
                     >
