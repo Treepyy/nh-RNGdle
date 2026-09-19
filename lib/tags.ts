@@ -707,10 +707,21 @@ export const tags: Record<string, { id: number, text: string, count: number }> =
   'food on body': { id: 135471, text: 'food on body', count: 4 },
 }
 
-export function getTagScore(count: number) {
-  if (!count || count === 0) return 1;
-  // Inverse scoring: lower count = exponentially higher score
-  return Math.max(1, Math.round(100000 / count));
+export function getTagScore(count: number, tagName: string = "") {
+  // 1. The Curve: Nerfs the massive spike at count=1, buffs the 100k+ counts
+  const baseScore = 15000 / Math.pow(count, 0.6);
+
+  // 2. The Unique Variance: Turns the string into a deterministic number
+  let hash = 0;
+  for (let i = 0; i < tagName.length; i++) {
+    hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Creates a unique flat addition between 0 and 50 based on the tag's letters
+  const stringBonus = Math.abs(hash % 50);
+
+  // 3. Final Calculation
+  return Math.max(1, Math.round(baseScore + stringBonus)) / 10;
 }
 
 export function getRarityColor(count: number) {

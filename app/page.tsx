@@ -106,9 +106,9 @@ export default function RNGDle() {
         if (parsed.date === today) {
           const result = parsed.result;
 
-          // Retroactively apply any score patches to today's saved roll
+          // Retroactively apply any score patches to today's saved roll (includes the 5x multiplier check)
           if (!result.isDeleted && result.tags) {
-            let recalculatedScore = (result.digitBonus?.score || 0) + (result.favorites || 0);
+            let recalculatedScore = (result.digitBonus?.score || 0) + ((result.favorites || 0) * 5);
             result.tags.forEach((t: RolledTag) => {
               recalculatedScore += t.score;
             });
@@ -179,8 +179,8 @@ export default function RNGDle() {
           const digitBonus = getDigitBonus(data.id);
           const favoritesBonus = data.num_favorites || 0;
 
-          // Start with bonuses
-          let totalScore = digitBonus.score + favoritesBonus;
+          // Start with bonuses (favorites multiplied by 5)
+          let totalScore = digitBonus.score + (favoritesBonus * 5);
 
           const processedTags: RolledTag[] = data.tags.map((tagName: string) => {
             const tagData = localTags[tagName] || { count: 100000 };
@@ -195,9 +195,6 @@ export default function RNGDle() {
           });
 
           processedTags.sort((a, b) => a.score - b.score);
-
-          // Override to 0 if no tags are present
-          // if (data.tags.length === 0) totalScore = 0;
 
           const hasAIGenerated = data.tags.includes('ai generated');
           if (hasAIGenerated) {
@@ -342,7 +339,7 @@ export default function RNGDle() {
     }
 
     if (result.favorites > 0 && !result.isDeleted) {
-      shareText += `💕 +${result.favorites.toLocaleString()} Favorites\n`;
+      shareText += `💕 ${result.favorites.toLocaleString()} Favorites (+${(result.favorites * 5).toLocaleString()})\n`;
     }
 
     if (result.hasAIGenerated) {
@@ -475,7 +472,7 @@ export default function RNGDle() {
 
                   {result.favorites > 0 && !result.isDeleted && (
                     <p className="text-blue-400 text-xs font-bold tracking-widest mt-1 uppercase">
-                      FAVORITES BONUS: +{result.favorites.toLocaleString()}
+                      {result.favorites.toLocaleString()} FAVORITES (+{(result.favorites * 5).toLocaleString()})
                     </p>
                   )}
 

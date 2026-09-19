@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const randomId = Math.floor(Math.random() * 661547) + 1;
-  // for testing: 533649 - big tags, 177013 - deleted, 67124 - no tags + no favorites + 5 digits
-  // const randomId = 654093
+  // for testing: 533649 - big tags, 177013 - deleted, 67124 - no tags + no favorites + 5 digits, 654093
+  // const randomId = 454531
 
   try {
     const res = await fetch(`https://nhentai.net/api/v2/galleries/${randomId}`, {
